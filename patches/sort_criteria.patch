@@ -1,0 +1,62 @@
+diff --git a/src/Form/AjaxSolrSearchConfigForm.php b/src/Form/AjaxSolrSearchConfigForm.php
+index a4eacf7..bed5312 100644
+--- a/src/Form/AjaxSolrSearchConfigForm.php
++++ b/src/Form/AjaxSolrSearchConfigForm.php
+@@ -76,9 +76,11 @@ class AjaxSolrSearchConfigForm extends ConfigFormBase {
+       if ($config->get("solr-proxy-enabled") == 1) {
+         global $base_url;
+         $mappedFields = $this->getMappedFieldsOptions($this->requestMappedFieldsFromSolr("$base_url/solr/multisite"));
++        $singleValuedFields = $this->filterValidSortFields($mappedFields, "$base_url/solr/multisite");
+       }
+       else {
+         $mappedFields = $this->getMappedFieldsOptions($this->requestMappedFieldsFromSolr($config->get("solr-server-url")));
++        $singleValuedFields = $this->filterValidSortFields($mappedFields, $config->get("solr-server-url"));
+       }
+ 
+       // Only return $form if the Solr URL is active.
+@@ -395,7 +397,7 @@ class AjaxSolrSearchConfigForm extends ConfigFormBase {
+         // field name column
+         $form['container']['sort-criteria']['table'][$i]['sort-field-name'] = [
+           '#type' => 'select',
+-          '#options' => $mappedFields,
++          '#options' => $singleValuedFields,
+           '#title' => new FormattableMarkup('Solr Field Name #' . ($i + 1), []),
+           '#title_display' => 'invisible',
+           '#default_value' => (!empty($field['fname'])) ? $field['fname'] : '',
+@@ -938,6 +940,36 @@ class AjaxSolrSearchConfigForm extends ConfigFormBase {
+     return $options;
+   }
+ 
++  /**
++   * Filter out invalid fields for Solr sorting (i.e. multivalued fields except for score)
++   */
++  public function filterValidSortFields($mappedFields, string $solr_url) {
++    $curl = curl_init();
++    $solr_url = $solr_url . '/schema/fields/';
++
++    $filtered = [];
++    foreach ($mappedFields as $field) {
++      curl_setopt_array($curl, [
++        CURLOPT_URL => $solr_url . $field . '?includeDynamic=true&wt=json',
++        CURLOPT_RETURNTRANSFER => TRUE,
++        CURLOPT_ENCODING => '',
++        CURLOPT_MAXREDIRS => 10,
++        CURLOPT_TIMEOUT => 0,
++        CURLOPT_FOLLOWLOCATION => TRUE,
++        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
++        CURLOPT_CUSTOMREQUEST => 'GET',
++      ]);
++
++      $response = json_decode(curl_exec($curl));
++      if (!$response->field->multiValued || $field === 'score') {
++        $filtered[$field] = $field;
++      }
++
++    }
++    curl_close($curl);
++    return $filtered;
++  }
++
+   /**
+    * Callback for ajax_example_autotextfields.
+    *
